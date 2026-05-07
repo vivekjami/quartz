@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 pub mod codec;
 pub mod segment;
 pub mod wal;
+pub mod merge;
 
 /// A Python module implemented in Rust.
 #[pymodule]

@@ -17,9 +17,9 @@ use std::path::{Path, PathBuf};
 /// Write amplification: O(log_{merge_factor}(total_segments))
 /// For 1M docs in 100 initial segments, merge_factor=10: each doc rewritten ~2-3 times.
 pub struct TieredMergePolicy {
-    pub max_per_tier: usize,   // trigger merge when a tier exceeds this (default: 10)
-    pub merge_factor: usize,   // segments per merge operation (default: 10)
-    pub floor_size: u64,       // minimum segment size to consider for tiering (default: 2MB)
+    pub max_per_tier: usize, // trigger merge when a tier exceeds this (default: 10)
+    pub merge_factor: usize, // segments per merge operation (default: 10)
+    pub floor_size: u64,     // minimum segment size to consider for tiering (default: 2MB)
 }
 
 impl Default for TieredMergePolicy {
@@ -103,7 +103,8 @@ pub fn k_way_merge(
     }
 
     let mut postings_out = BufWriter::new(File::create(seg_dir.join("postings.bin"))?);
-    let mut fst_builder = MapBuilder::new(BufWriter::new(File::create(seg_dir.join("terms.fst"))?)).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let mut fst_builder = MapBuilder::new(BufWriter::new(File::create(seg_dir.join("terms.fst"))?))
+        .map_err(std::io::Error::other)?;
     let mut current_offset: u64 = 0;
 
     // Merged doc lengths: concatenation of all segments' doclens
@@ -117,15 +118,15 @@ pub fn k_way_merge(
         offsets
     };
 
-    for (_seg_idx, seg) in segments.iter().enumerate() {
+    for seg in segments.iter() {
         let n = seg.meta.num_docs as usize;
         for doc_id in 0..n {
             merged_doclens.push(seg.doc_len(doc_id as u32));
         }
     }
 
-    let avg_dl = merged_doclens.iter().map(|&l| l as f64).sum::<f64>()
-        / merged_doclens.len() as f64;
+    let avg_dl =
+        merged_doclens.iter().map(|&l| l as f64).sum::<f64>() / merged_doclens.len() as f64;
 
     let mut max_scores: Vec<(f32, u32)> = Vec::new(); // (max_score, term_counter)
     let mut term_counter: u32 = 0;
@@ -152,7 +153,9 @@ pub fn k_way_merge(
             match heap.peek() {
                 Some(Reverse((t, _, _))) if t == &min_term => {
                     let Reverse((_, other_seg, other_offset)) = heap.pop().unwrap();
-                    let (ids2, tfs2) = decode_postings(&segments[other_seg].postings_mmap[other_offset as usize..]);
+                    let (ids2, tfs2) = decode_postings(
+                        &segments[other_seg].postings_mmap[other_offset as usize..],
+                    );
                     let base2 = doc_id_offsets[other_seg];
                     combined_ids.extend(ids2.iter().map(|&d| d + base2));
                     combined_tfs.extend_from_slice(&tfs2);
@@ -172,22 +175,33 @@ pub fn k_way_merge(
 
         // Compute WAND max score for merged postings
         let doc_freq = sorted_ids.len() as f32;
-        let idf = ((total_docs - doc_freq + 0.5) / (doc_freq + 0.5)).ln().max(0.0);
+        let idf = ((total_docs - doc_freq + 0.5) / (doc_freq + 0.5))
+            .ln()
+            .max(0.0);
         let max_tf = *sorted_tfs.iter().max().unwrap_or(&1) as f32;
-        let min_dl = merged_doclens.iter().map(|&l| l as f32).fold(f32::INFINITY, f32::min).max(1.0);
+        let min_dl = merged_doclens
+            .iter()
+            .map(|&l| l as f32)
+            .fold(f32::INFINITY, f32::min)
+            .max(1.0);
         let k1 = 1.2f32;
         let b = 0.75f32;
-        let tf_norm = (max_tf * (k1 + 1.0)) / (max_tf + k1 * (1.0 - b + b * min_dl / avg_dl as f32));
+        let tf_norm =
+            (max_tf * (k1 + 1.0)) / (max_tf + k1 * (1.0 - b + b * min_dl / avg_dl as f32));
         max_scores.push((idf * tf_norm, term_counter));
 
         // Write merged postings
         let encoded = encode_postings(&sorted_ids, &sorted_tfs);
-        fst_builder.insert(&min_term, current_offset).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        fst_builder
+            .insert(&min_term, current_offset)
+            .map_err(std::io::Error::other)?;
         postings_out.write_all(&encoded)?;
         current_offset += encoded.len() as u64;
         term_counter += 1;
     }
-    fst_builder.finish().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    fst_builder
+        .finish()
+        .map_err(std::io::Error::other)?;
 
     // Write maxscores.bin
     let mut ms_file = BufWriter::new(File::create(seg_dir.join("maxscores.bin"))?);
@@ -271,12 +285,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let p = dir.path();
 
-        let seg_a = make_segment(p, 0, &[
-            ("http://a.com", vec!["rust", "fast"]),
-        ]);
-        let seg_b = make_segment(p, 1, &[
-            ("http://b.com", vec!["rust", "python"]),
-        ]);
+        let seg_a = make_segment(p, 0, &[("http://a.com", vec!["rust", "fast"])]);
+        let seg_b = make_segment(p, 1, &[("http://b.com", vec!["rust", "python"])]);
 
         let merged = k_way_merge(&[&seg_a, &seg_b], p, 99).unwrap();
 

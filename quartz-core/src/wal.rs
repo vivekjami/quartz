@@ -1,7 +1,7 @@
 // quartz-core/src/wal.rs
 use crc32fast::Hasher as Crc32Hasher;
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, BufWriter, Read, Seek, Write};
 use std::path::Path;
 
 pub const OP_INSERT: u8 = 0x01;
@@ -18,10 +18,7 @@ pub struct WriteAheadLog {
 
 impl WriteAheadLog {
     pub fn open(path: &Path) -> std::io::Result<Self> {
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
             writer: BufWriter::new(file),
             path: path.to_path_buf(),
@@ -112,33 +109,26 @@ impl WriteAheadLog {
             all_entries.push((op, doc_id, payload));
 
             if op == OP_CHECKPOINT {
-                last_checkpoint_pos = all_entries.len();  // now points past the checkpoint
+                last_checkpoint_pos = all_entries.len(); // now points past the checkpoint
             }
-
-            
         }
 
         // Return only entries after the last checkpoint
         Ok(all_entries[last_checkpoint_pos..].to_vec())
     }
 
-
     /// Returns the current byte offset in the WAL file.
     /// Useful for checkpointing: record this offset, replay only from here next time.
     pub fn current_offset(&mut self) -> std::io::Result<u64> {
         self.writer.flush()?;
-        self.writer.get_mut().seek(SeekFrom::Current(0))
+        self.writer.get_mut().stream_position()
     }
 
     /// Replay this WAL using the stored path — convenience wrapper around replay().
     pub fn replay_self(&self) -> std::io::Result<Vec<(u8, u64, Vec<u8>)>> {
         Self::replay(&self.path)
     }
-
-
 }
-
-
 
 #[cfg(test)]
 mod tests {

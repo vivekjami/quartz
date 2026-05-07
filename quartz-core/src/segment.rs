@@ -31,12 +31,12 @@ pub struct MemSegment {
     /// term_string → term_id
     pub term_dict: BTreeMap<String, u32>,
     pub doc_metas: Vec<DocMeta>,
-    pub doc_urls: Vec<u8>,          // packed URL bytes
-    pub doc_lengths: Vec<u32>,      // number of tokens per doc
+    pub doc_urls: Vec<u8>,     // packed URL bytes
+    pub doc_lengths: Vec<u32>, // number of tokens per doc
     pub next_term_id: u32,
     pub next_doc_id: u32,
-    pub byte_size: usize,           // approximate RAM usage
-    pub flush_threshold: usize,     // default: 50 * 1024 * 1024 (50MB)
+    pub byte_size: usize,       // approximate RAM usage
+    pub flush_threshold: usize, // default: 50 * 1024 * 1024 (50MB)
 }
 
 impl MemSegment {
@@ -125,8 +125,8 @@ impl MemSegment {
         let mut term_to_offset: BTreeMap<&str, (u32, u64, u32)> = BTreeMap::new();
         let mut max_scores: Vec<f32> = vec![0.0f32; self.next_term_id as usize];
         let total_docs = self.doc_lengths.len() as f32;
-        let avg_dl = self.doc_lengths.iter().map(|&l| l as f64).sum::<f64>()
-            / total_docs.max(1.0) as f64;
+        let avg_dl =
+            self.doc_lengths.iter().map(|&l| l as f64).sum::<f64>() / total_docs.max(1.0) as f64;
 
         let mut current_offset: u64 = 0;
 
@@ -148,8 +148,7 @@ impl MemSegment {
                 postings_file.write_all(&encoded)?;
 
                 // Compute WAND max score for this term
-                let idf = ((total_docs - doc_freq as f32 + 0.5)
-                    / (doc_freq as f32 + 0.5))
+                let idf = ((total_docs - doc_freq as f32 + 0.5) / (doc_freq as f32 + 0.5))
                     .ln()
                     .max(0.0);
                 let max_tf = *tfs.iter().max().unwrap_or(&1) as f32;
@@ -175,18 +174,23 @@ impl MemSegment {
         // FST value: pack term_id (u32) and doc_freq (u32) into u64; offset stored separately.
         // For this implementation: value = offset into postings.bin (u64 fits fst's u64 value).
         // We store term_id and doc_freq in a sidecar .terminfo file.
-        let mut fst_builder = MapBuilder::new(BufWriter::new(File::create(&terms_path)?)).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let mut fst_builder = MapBuilder::new(BufWriter::new(File::create(&terms_path)?))
+            .map_err(std::io::Error::other)?;
         let mut terminfo_file = BufWriter::new(File::create(seg_dir.join("terminfo.bin"))?);
 
         for (term_str, &(term_id, offset, doc_freq)) in &term_to_offset {
             // FST maps term_str → postings.bin byte offset
-            fst_builder.insert(term_str.as_bytes(), offset).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            fst_builder
+                .insert(term_str.as_bytes(), offset)
+                .map_err(std::io::Error::other)?;
             // terminfo.bin: indexed by term_id, stores doc_freq (4 bytes)
             // Note: term_ids are dense (0..next_term_id), so indexing directly works.
             let _ = term_id; // used below for max_scores
             terminfo_file.write_all(&doc_freq.to_le_bytes())?;
         }
-        fst_builder.finish().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        fst_builder
+            .finish()
+            .map_err(std::io::Error::other)?;
 
         // 3. Write maxscores.bin
         let mut maxscores_file = BufWriter::new(File::create(&maxscores_path)?);
@@ -195,22 +199,17 @@ impl MemSegment {
         }
 
         // 4. Write doclens.bin
-        let mut doclens_file =
-            BufWriter::new(File::create(seg_dir.join("doclens.bin"))?);
+        let mut doclens_file = BufWriter::new(File::create(seg_dir.join("doclens.bin"))?);
         for &dl in &self.doc_lengths {
             doclens_file.write_all(&dl.to_le_bytes())?;
         }
 
         // 5. Write docmeta.bin (fixed-size records)
-        let mut docmeta_file =
-            BufWriter::new(File::create(seg_dir.join("docmeta.bin"))?);
+        let mut docmeta_file = BufWriter::new(File::create(seg_dir.join("docmeta.bin"))?);
         for meta in &self.doc_metas {
             // Safety: DocMeta is repr(C, packed), all fields are integers. Safe to cast to bytes.
             let bytes = unsafe {
-                std::slice::from_raw_parts(
-                    meta as *const DocMeta as *const u8,
-                    DOC_META_SIZE,
-                )
+                std::slice::from_raw_parts(meta as *const DocMeta as *const u8, DOC_META_SIZE)
             };
             docmeta_file.write_all(bytes)?;
         }
@@ -224,17 +223,12 @@ impl MemSegment {
             num_docs: self.doc_lengths.len() as u64,
             num_terms: self.next_term_id as u64,
             avg_doc_len: avg_dl,
-            total_postings: self
-                .postings
-                .values()
-                .map(|v| v.len() as u64)
-                .sum(),
+            total_postings: self.postings.values().map(|v| v.len() as u64).sum(),
             merge_gen: 0,
         };
         let meta_json = serde_json::to_vec_pretty(&meta)?;
         fs::write(seg_dir.join("meta.json"), meta_json)?;
 
-        
         // Explicitly flush and drop all writers before opening as DiskSegment.
         // BufWriters are dropped AFTER the return value is computed in Rust,
         // so without this, DiskSegment::open mmaps empty files.
@@ -243,7 +237,6 @@ impl MemSegment {
         drop(doclens_file);
         drop(docmeta_file);
         // terminfo_file and fst_builder are already consumed/finished above
-
 
         DiskSegment::open(&seg_dir)
     }
@@ -265,19 +258,18 @@ pub struct SegmentMeta {
 pub struct DiskSegment {
     pub dir: PathBuf,
     pub meta: SegmentMeta,
-    pub postings_mmap: Mmap,     // postings.bin
-    pub doclens_mmap: Mmap,      // doclens.bin (u32[])
-    pub docmeta_mmap: Mmap,      // docmeta.bin (DocMeta[])
-    pub docurls_mmap: Mmap,      // docurls.bin
-    pub maxscores_mmap: Mmap,    // maxscores.bin (f32[])
-    pub fst: Map<Vec<u8>>,       // FST term dictionary (fully loaded)
-    pub size_bytes: u64,         // total size of all files
+    pub postings_mmap: Mmap,  // postings.bin
+    pub doclens_mmap: Mmap,   // doclens.bin (u32[])
+    pub docmeta_mmap: Mmap,   // docmeta.bin (DocMeta[])
+    pub docurls_mmap: Mmap,   // docurls.bin
+    pub maxscores_mmap: Mmap, // maxscores.bin (f32[])
+    pub fst: Map<Vec<u8>>,    // FST term dictionary (fully loaded)
+    pub size_bytes: u64,      // total size of all files
 }
 
 impl DiskSegment {
     pub fn open(dir: &Path) -> std::io::Result<Self> {
-        let meta: SegmentMeta =
-            serde_json::from_slice(&fs::read(dir.join("meta.json"))?)?;
+        let meta: SegmentMeta = serde_json::from_slice(&fs::read(dir.join("meta.json"))?)?;
 
         let mmap = |name: &str| -> std::io::Result<Mmap> {
             let f = File::open(dir.join(name))?;
@@ -292,14 +284,22 @@ impl DiskSegment {
         let maxscores_mmap = mmap("maxscores.bin")?;
 
         let fst_bytes = fs::read(dir.join("terms.fst"))?;
-        let fst = Map::new(fst_bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let fst =
+            Map::new(fst_bytes).map_err(std::io::Error::other)?;
 
-        let size_bytes = ["postings.bin", "terms.fst", "doclens.bin",
-                          "docmeta.bin", "docurls.bin", "maxscores.bin", "terminfo.bin"]
-            .iter()
-            .filter_map(|name| fs::metadata(dir.join(name)).ok())
-            .map(|m| m.len())
-            .sum();
+        let size_bytes = [
+            "postings.bin",
+            "terms.fst",
+            "doclens.bin",
+            "docmeta.bin",
+            "docurls.bin",
+            "maxscores.bin",
+            "terminfo.bin",
+        ]
+        .iter()
+        .filter_map(|name| fs::metadata(dir.join(name)).ok())
+        .map(|m| m.len())
+        .sum();
 
         Ok(Self {
             dir: dir.to_path_buf(),
@@ -327,9 +327,7 @@ impl DiskSegment {
     /// Get doc length by segment-local doc_id.
     pub fn doc_len(&self, doc_id: u32) -> u32 {
         let offset = (doc_id as usize) * 4;
-        u32::from_le_bytes(
-            self.doclens_mmap[offset..offset + 4].try_into().unwrap(),
-        )
+        u32::from_le_bytes(self.doclens_mmap[offset..offset + 4].try_into().unwrap())
     }
 
     /// Get DocMeta by segment-local doc_id.
@@ -346,12 +344,9 @@ impl DiskSegment {
         if offset + 4 > self.maxscores_mmap.len() {
             return 0.0;
         }
-        f32::from_le_bytes(
-            self.maxscores_mmap[offset..offset + 4].try_into().unwrap(),
-        )
+        f32::from_le_bytes(self.maxscores_mmap[offset..offset + 4].try_into().unwrap())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

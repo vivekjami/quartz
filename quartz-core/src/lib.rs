@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 pub mod codec;
 pub mod segment;
+pub mod wal;
 
 /// A Python module implemented in Rust.
 #[pymodule]

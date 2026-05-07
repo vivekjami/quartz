@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+pub mod codec;
 
 /// A Python module implemented in Rust.
 #[pymodule]

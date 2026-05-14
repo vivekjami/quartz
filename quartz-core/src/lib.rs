@@ -3,6 +3,7 @@ pub mod codec;
 pub mod merge;
 pub mod segment;
 pub mod wal;
+pub mod bm25;
 
 /// A Python module implemented in Rust.
 #[pymodule]

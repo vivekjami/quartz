@@ -1,0 +1,11 @@
+services:
+  quartz:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../data:/app/data   # mount index + hnsw from host
+    environment:
+      - PYTHONUNBUFFERED=1

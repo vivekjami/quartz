@@ -147,9 +147,9 @@ This matches Lucene's TieredMergePolicy exactly. The difference: Lucene's implem
 
 | Metric | BM25 only | Hybrid |
 |--------|-----------|--------|
-| P50 | _ms_ | _ms_ |
-| P95 | _ms_ | _ms_ |
-| P99 | _ms_ | _ms_ |
+| P50 | 0.73ms | _TBD_ |
+| P95 | 1.82ms | _TBD_ |
+| P99 | 3.19ms | _TBD_ |
 
 **Index stats** (1M docs):
 

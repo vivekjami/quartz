@@ -1,0 +1,40 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo test --workspace
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install maturin uv
+      - run: uv venv && . .venv/bin/activate && uv pip install -e ".[dev]" && maturin develop --release
+      - run: . .venv/bin/activate && pytest tests/ -v
+      - run: . .venv/bin/activate && ruff check quartz/ benchmarks/ tests/
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install maturin uv && uv venv && . .venv/bin/activate && uv pip install -e ".[dev]" && maturin develop --release
+      - run: . .venv/bin/activate && cargo test --workspace

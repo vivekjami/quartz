@@ -235,17 +235,24 @@ uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 maturin develop --release
 
-# 3. Download 5 WET files from Common Crawl (~1.5GB)
-python -m quartz.ingest.download --crawl CC-MAIN-2025-13 --n-files 5
+# 3. Download WET files from Common Crawl (e.g. 10 files = ~3GB)
+python -m quartz.ingest.download --crawl CC-MAIN-2025-13 --n-files 10
 
-# 4. Index
-python -m quartz.ingest.run --data-dir data/wet/ --index-dir data/index/
+# 4. Ingest and Build Index
+python -m quartz.ingest.pipeline --data-dir data/wet/ --index-dir data/index/
 
-# 5. Serve
+# 5. Build HNSW Dense Retrieval Graph
+python -m quartz.hnsw.build --index-dir data/index/ --hnsw-dir data/hnsw/
+
+# 6. Run Tests & Benchmarks
+make test
+make bench
+
+# 7. Serve FastAPI Endpoints
 uvicorn quartz.serve.api:app --port 8000
 
-# Query
-curl "http://localhost:8000/search?q=transformer+attention+mechanism&k=10"
+# Query (BM25 or Hybrid)
+curl "http://localhost:8000/search?q=machine+learning&mode=hybrid&k=10"
 ```
 
 ---
@@ -296,6 +303,8 @@ quartz/
 
 ## Running the evaluation
 
+You can run all benchmarks at once using `make bench`, or run them individually:
+
 ```bash
 # BEIR SciFact
 python -m quartz.eval.beir_runner --dataset scifact --index data/index/ --output results/
@@ -303,11 +312,17 @@ python -m quartz.eval.beir_runner --dataset scifact --index data/index/ --output
 # BEIR NFCorpus
 python -m quartz.eval.beir_runner --dataset nfcorpus --index data/index/ --output results/
 
-# Latency profiling (1000 BEIR queries, BM25 + hybrid)
+# Latency profiling (1000 queries, BM25)
 python -m quartz.eval.profiler --index data/index/ --n-queries 1000
 
+# WAND early termination ablation
+python -m benchmarks.wand_ablation --index data/index/ --n-queries 500
+
+# Tiered merge write amplification factor
+python -m benchmarks.merge_amplification --index data/index/
+
 # ef_search Pareto curve (HNSW recall vs latency at different ef values)
-python -m benchmarks.ef_search_pareto --index data/index/
+python -m benchmarks.ef_search_pareto --hnsw-dir data/hnsw/ --n-queries 200
 ```
 
 ---
